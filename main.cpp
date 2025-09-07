@@ -2680,7 +2680,10 @@ void Engine::update(){
     // Update manual/AI movement always so arrows work in 3D too
     updateTopDownPlayers((float)timer.dt);
     if(topDown2D){
-        if(cameraFollow){ int sp = (selectedPlayer>=0 && selectedPlayer<(int)players.size())? selectedPlayer : 0; if(!players.empty()) topDownCenter = players[sp].pos; }
+        if(cameraFollow){ int sp = (selectedPlayer>=0 && selectedPlayer<(int)players.size())? selectedPlayer : 0; if(!players.empty()) topDownCenterTarget = players[sp].pos; }
+        float k = std::min(1.0f, (float)timer.dt * 6.0f);
+        topDownCenter.x += (topDownCenterTarget.x - topDownCenter.x) * k;
+        topDownCenter.z += (topDownCenterTarget.z - topDownCenter.z) * k;
         pushPlayerCoordsToInputs();
         applyInputMappings();
     }
@@ -2908,7 +2911,7 @@ void Engine::render(){
         ImGui::SetNextWindowPos(ImVec2(disp.x - 360.0f, 10.0f), layCond);
         ImGui::SetNextWindowSize(ImVec2(350.0f, 270.0f), layCond);
         if(cfg.showUI && gShowNeuralXPanel){
-            ImGui::Begin("Turbine [F2]", nullptr, ImGuiWindowFlags_NoCollapse);
+            ImGui::Begin("Turbine [F2]", &gShowNeuralXPanel, ImGuiWindowFlags_NoCollapse);
             char title[128];
             std::snprintf(title, sizeof(title), "NeuralT %s | dt: %.3f ms", kAppVersion, timer.dt*1000.0);
             ImGui::TextUnformatted(title);
@@ -3112,7 +3115,7 @@ void Engine::render(){
         if(gShowLogWindow){
         ImGui::SetNextWindowPos(ImVec2(10.0f, neH), layCond);
         ImGui::SetNextWindowSize(ImVec2(logW, logH), layCond);
-            ImGui::Begin("Log [F3]", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
+            ImGui::Begin("Log [F3]", &gShowLogWindow, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
             ImGui::Text("Lessons: %d", gLessonsCount);
             ImGui::Separator();
             ImGui::BeginChild("log_scroller", ImVec2(0, -28), true, ImGuiWindowFlags_HorizontalScrollbar);
@@ -3132,7 +3135,7 @@ void Engine::render(){
         if(gShowParamsWindow){
         ImGui::SetNextWindowPos(ImVec2(disp.x - paramsW - 10.0f, disp.y - paramsH - 10.0f), layCond);
         ImGui::SetNextWindowSize(ImVec2(paramsW, paramsH), layCond);
-            ImGui::Begin("Training parameters [F4]", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
+            ImGui::Begin("Training parameters [F4]", &gShowParamsWindow, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
         if(!gTrain.active){
             ImGui::SliderInt("Epochs", &gTrain.totalEpochs, 10, 5000);
             ImGui::SliderFloat("Learning rate", &gTrain.lr, 1e-5f, 1.0f, "%.6f", ImGuiSliderFlags_Logarithmic);
@@ -3416,7 +3419,8 @@ void Engine::render(){
         if(topDown2D){
             ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
             ImGui::SetNextWindowBgAlpha(0.85f);
-            ImGui::Begin("Controller [F8]", nullptr, ImGuiWindowFlags_NoResize|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoCollapse);
+            static bool sShowController = true;
+            ImGui::Begin("Controller [F8]", &sShowController, ImGuiWindowFlags_NoResize|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoCollapse);
             int sp = (selectedPlayer>=0 && selectedPlayer<(int)players.size()) ? selectedPlayer : 0;
             const char* nm = (!players.empty()? (players[sp].name.empty()?"Player":players[sp].name.c_str()) : "None");
             ImGui::Text("Selected: %s (#%d)", nm, sp);
@@ -3458,13 +3462,14 @@ void Engine::render(){
             ImGuiCond layCond2 = gForceRelayoutWindows ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
             ImGui::SetNextWindowPos(ImVec2(disp.x - 360.0f, 10.0f), layCond2);
             ImGui::SetNextWindowSize(ImVec2(350.0f, 480.0f), layCond2);
-            if(ImGui::Begin("Simulator Map [F8]", nullptr, ImGuiWindowFlags_NoCollapse)){
+            static bool sShowSimMap = true;
+            if(ImGui::Begin("Simulator Map [F8]", &sShowSimMap, ImGuiWindowFlags_NoCollapse)){
                 // Players list
                 ImGui::Text("Players");
                 ImGui::SameLine();
                 if(ImGui::Button("Camera Player Focus")){
                     int sp = (selectedPlayer>=0 && selectedPlayer<(int)players.size())? selectedPlayer : 0;
-                    if(!players.empty()){ topDownCenter = players[sp].pos; cam.target = {players[sp].pos.x, players[sp].pos.y, players[sp].pos.z}; }
+                    if(!players.empty()){ topDownCenterTarget = players[sp].pos; cam.target = {players[sp].pos.x, players[sp].pos.y, players[sp].pos.z}; }
                 }
                 ImGui::SameLine();
                 ImGui::Checkbox("Camera Follow", &cameraFollow);
@@ -3605,7 +3610,7 @@ void Engine::render(){
                         ImGui::InputFloat((std::string("SZ##")+std::to_string(i)).c_str(), &se.scale.z, 0,0,"%.2f");
                         ImGui::PopItemWidth();
                         ImGui::TableSetColumnIndex(7);
-                        if(ImGui::Button((std::string("Select##")+std::to_string(i)).c_str())){ selectedShape = i; topDownCenter = se.pos; if(!topDown2D){ cam.target = {se.pos.x, se.pos.y, se.pos.z}; } }
+                        if(ImGui::Button((std::string("Select##")+std::to_string(i)).c_str())){ selectedShape = i; topDownCenterTarget = se.pos; if(!topDown2D){ cam.target = {se.pos.x, se.pos.y, se.pos.z}; } }
                         ImGui::SameLine();
                         if(ImGui::Button((std::string("Delete##")+std::to_string(i)).c_str())) removeIdx = i;
                     }
@@ -4256,7 +4261,7 @@ void Engine::onMouseButton(int button, int action, int mods){
         for(int i=0;i<(int)shapes.size();++i){ float dx=shapes[i].pos.x-wx; float dz=shapes[i].pos.z-wz; float d=dx*dx+dz*dz; if(d<bestSD){ bestSD=d; bestShape=i; } }
         if(bestShape>=0 && bestSD < (1.0f*1.0f)){
             selectedShape = bestShape; selectedPlayer = -1;
-            topDownCenter = shapes[bestShape].pos;
+            topDownCenterTarget = shapes[bestShape].pos;
             Logf("Selected shape: %s (#%d)", shapes[bestShape].name.c_str(), bestShape);
             return;
         }
@@ -4265,7 +4270,7 @@ void Engine::onMouseButton(int button, int action, int mods){
         for(int i=0;i<(int)players.size();++i){ float dx=players[i].pos.x-wx; float dz=players[i].pos.z-wz; float d=dx*dx+dz*dz; if(d<bestD){ bestD=d; best=i; } }
         if(best>=0 && bestD < (0.9f*0.9f)){
             selectedPlayer = best; selectedShape = -1;
-            topDownCenter = players[best].pos;
+            topDownCenterTarget = players[best].pos;
             Logf("Selected controller: %s (index %d)", players[best].name.empty()?"Player":players[best].name.c_str(), best);
         }
     }
